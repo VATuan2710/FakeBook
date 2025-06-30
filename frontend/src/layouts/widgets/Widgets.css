@@ -1,0 +1,13 @@
+.widgets {
+  width: 250px;
+  padding: 20px;
+  border-left: 1px solid #ddd;
+  background-color: #f9f9f9;
+}
+
+/* ===== DARK MODE STYLES ===== */
+
+[data-theme="dark"] .widgets {
+  background-color: var(--gray-900);
+  border-left-color: var(--gray-700);
+}

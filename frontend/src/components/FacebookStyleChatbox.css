@@ -1,0 +1,401 @@
+/* Facebook Style Chatbox */
+.facebook-chatbox {
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+  background: #fff;
+  border: none;
+}
+
+.facebook-chatbox.minimized {
+  max-height: 48px;
+}
+
+/* Chatbox Header */
+.chatbox-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: #fff;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid #e4e6eb;
+  cursor: pointer;
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.header-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.header-avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+}
+
+.header-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.online-status {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid white;
+  border-radius: 50%;
+  font-size: 6px;
+}
+
+.online-status.online {
+  color: #42b883;
+}
+
+.online-status.recently {
+  color: #f7b731;
+}
+
+.online-status.offline {
+  color: #c7c7c7;
+}
+
+.header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.friend-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #050505;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 1px;
+}
+
+.activity-status {
+  font-size: 12px;
+  color: #65676b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.action-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #65676b;
+  transition: all 0.2s;
+  font-size: 12px;
+  padding: 4px;
+}
+
+.action-btn:hover {
+  background-color: #f0f2f5;
+  color: #1877f2;
+}
+
+/* Messages Container */
+.chatbox-messages {
+  flex: 1;
+  padding: 8px 12px;
+  overflow-y: auto;
+  max-height: 380px;
+  min-height: 200px;
+  background: white;
+}
+
+.loading-messages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  color: #65676b;
+  font-size: 14px;
+}
+
+/* Message Wrapper */
+.message-wrapper {
+  display: flex;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.message-wrapper.own {
+  justify-content: flex-end;
+}
+
+.message-wrapper.other {
+  justify-content: flex-start;
+}
+
+.message-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  align-self: flex-end;
+}
+
+/* Message Bubble */
+.message-bubble {
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 18px;
+  position: relative;
+  word-wrap: break-word;
+}
+
+.message-bubble.own {
+  background: #1877f2;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.message-bubble.other {
+  background: #f0f2f5;
+  color: #1c1e21;
+  border-bottom-left-radius: 4px;
+}
+
+.message-text {
+  font-size: 14px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.message-time {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 4px;
+  text-align: center;
+}
+
+/* Typing Indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  color: #65676b;
+  font-size: 13px;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  background: #65676b;
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+
+/* Chat Input */
+.chatbox-input {
+  padding: 8px;
+  border-top: 1px solid #e4e6eb;
+  background: #fff;
+  border-radius: 0 0 8px 8px;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  background: #f0f2f5;
+  border-radius: 20px;
+  padding: 8px;
+  margin: 0 4px;
+  border-radius: 20px;
+  padding: 4px 8px;
+  gap: 8px;
+}
+
+.message-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #1c1e21;
+  outline: none;
+  resize: none;
+  min-height: 20px;
+  max-height: 100px;
+}
+
+.message-input::placeholder {
+  color: #65676b;
+}
+
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-action,
+.send-btn,
+.like-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #1877f2;
+  transition: all 0.2s;
+  font-size: 16px;
+}
+
+.input-action:hover,
+.like-btn:hover {
+  color: #166fe5;
+}
+
+.send-btn {
+  color: #1877f2;
+}
+
+.send-btn:hover {
+  color: #166fe5;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .facebook-chatbox {
+    width: 280px;
+    max-height: 400px;
+  }
+  
+  .chatbox-messages {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .facebook-chatbox {
+    width: 100vw;
+    right: 0 !important;
+    max-height: 70vh;
+    border-radius: 0;
+  }
+  
+  .chatbox-messages {
+    max-height: calc(70vh - 120px);
+  }
+}
+
+/* Dark Mode Support */
+[data-theme="dark"] .facebook-chatbox {
+  background: #242526;
+  border-color: #3a3b3c;
+}
+
+[data-theme="dark"] .chatbox-header {
+  background: #242526;
+  border-color: #3a3b3c;
+}
+
+[data-theme="dark"] .friend-name {
+  color: #e4e6ea;
+}
+
+[data-theme="dark"] .activity-status {
+  color: #42b883;
+}
+
+[data-theme="dark"] .action-btn {
+  color: #1877f2;
+}
+
+[data-theme="dark"] .action-btn:hover {
+  background-color: #3a3b3c;
+}
+
+[data-theme="dark"] .chatbox-messages {
+  background: #242526;
+}
+
+[data-theme="dark"] .message-bubble.other {
+  background: #3a3b3c;
+  color: #e4e6ea;
+}
+
+[data-theme="dark"] .message-text {
+  color: inherit;
+}
+
+[data-theme="dark"] .chatbox-input {
+  background: #242526;
+  border-color: #3a3b3c;
+}
+
+[data-theme="dark"] .input-wrapper {
+  background: #3a3b3c;
+}
+
+[data-theme="dark"] .message-input {
+  color: #e4e6ea;
+}
+
+[data-theme="dark"] .message-input::placeholder {
+  color: #b0b3b8;
+}
+
+[data-theme="dark"] .loading-messages {
+  color: #b0b3b8;
+}
+
+[data-theme="dark"] .typing-indicator {
+  color: #b0b3b8;
+}
+
+[data-theme="dark"] .typing-dots span {
+  background: #b0b3b8;
+} 
