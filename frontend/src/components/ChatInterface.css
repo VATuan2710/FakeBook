@@ -2,6 +2,9 @@
 .chat-interface {
   display: flex;
   flex-direction: column;
+  pointer-events: auto; /* Ensure proper pointer event handling */
+  user-select: none; /* Prevent text selection conflicts */
+  overflow: visible; /* Ensure content is not clipped */
 }
 
 

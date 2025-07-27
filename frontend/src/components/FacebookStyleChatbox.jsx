@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTimes,
@@ -13,124 +13,168 @@ import {
   faCircle
 } from '@fortawesome/free-solid-svg-icons';
 import { getDisplayName, getOnlineStatus } from '../service/friendService';
-import { getMessages } from '../service/chatService';
+import { getMessages, sendMessage as sendMessageAPI } from '../service/chatService';
 import socketService from '../service/socketService';
 import moment from 'moment';
 import './FacebookStyleChatbox.css';
 
-const FacebookStyleChatbox = ({ friend, currentUser, position = 0, onClose }) => {
-  console.log('🚀 FacebookStyleChatbox được mount với:', { friend, currentUser, position });
+const FacebookStyleChatbox = React.memo(({ friend, currentUser, position = 0, onClose }) => {
+  // console.log('🚀 FacebookStyleChatbox mounted for:', { friend: friend?.firstName, currentUser: currentUser?.firstName, position });
   
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  useEffect(() => {
-    if (friend && currentUser) {
-      initializeChat();
-      setupSocketListeners();
+  // Memoize IDs
+  const friendId = useMemo(() => friend?._id, [friend?._id]);
+  const currentUserId = useMemo(() => currentUser?._id, [currentUser?._id]);
+
+  // Socket realtime message handler - CHỈ trigger reload từ API
+  const handleReceiveMessage = useCallback((messageData) => {
+    console.log('📩 Received realtime notification:', messageData);
+    
+    // CHỈ xử lý notifications từ friend (không nhận từ chính mình)
+    if (messageData && messageData.sender && messageData.sender._id === friendId) {
+      console.log('🔄 Friend sent message, reloading from API...');
+      
+      // Reload messages từ API để có real data
+      const reloadMessages = async () => {
+        try {
+          const result = await getMessages(currentUserId, friendId);
+          if (result && result.messages) {
+            console.log('✅ Reloaded', result.messages.length, 'messages after notification');
+            setMessages(result.messages);
+          }
+        } catch (error) {
+          console.error('❌ Error reloading messages:', error);
+        }
+      };
+      
+      reloadMessages();
+    } else if (messageData && messageData.sender && messageData.sender._id === currentUserId) {
+      console.log('🔇 Ignoring my own message notification (already have from API)');
     }
+  }, [friendId, currentUserId]);
+
+  // Load messages từ API + Setup socket - CHỈ 1 LẦN
+  useEffect(() => {
+    if (!friendId || !currentUserId) return;
+    
+    // console.log('🔌 Setting up chat for:', friendId);
+
+    // Load messages từ database
+    const loadMessages = async () => {
+      try {
+        setLoading(true);
+        // console.log('📥 Loading messages from API...');
+        
+        const result = await getMessages(currentUserId, friendId);
+        
+        if (result && result.messages) {
+          // console.log('✅ Loaded', result.messages.length, 'messages from database');
+          setMessages(result.messages);
+        } else {
+          console.log('⚠️ No messages found');
+          setMessages([]);
+        }
+      } catch (error) {
+        console.error('❌ Error loading messages:', error);
+        setMessages([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Setup socket cho realtime - SỬ DỤNG SOCKET TRỰC TIẾP
+    const setupSocket = () => {
+      if (socketService.isConnectedToSocket()) {
+        // console.log('🔌 Setting up direct socket listeners');
+        
+        // Remove existing listeners trước khi add mới
+        socketService.socket.off('receive_message', handleReceiveMessage);
+        
+        // Add listener trực tiếp
+        socketService.socket.on('receive_message', handleReceiveMessage);
+      }
+    };
+
+    loadMessages();
+    setupSocket();
 
     return () => {
-      cleanupSocketListeners();
+      // console.log('🧹 Cleanup for:', friendId);
+      // Remove listener trực tiếp
+      if (socketService.socket) {
+        socketService.socket.off('receive_message', handleReceiveMessage);
+      }
     };
-  }, [friend, currentUser]);
+  }, [friendId, currentUserId, handleReceiveMessage]);
 
+  // Auto scroll
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const initializeChat = async () => {
-    try {
-      setLoading(true);
-      // Lấy tin nhắn thật từ API
-      const messages = await getMessages(currentUser._id, friend._id);
-      setMessages(messages || []);
-    } catch (error) {
-      console.error('Lỗi khi tải tin nhắn:', error);
-      // Fallback to empty messages if API fails
-      setMessages([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Debug
+  // useEffect(() => {
+  //   console.log('📊 Messages count:', messages.length);
+  // }, [messages]);
 
-  const setupSocketListeners = () => {
-    if (socketService.isConnectedToSocket()) {
-      socketService.addEventListener('receive_message', handleReceiveMessage);
-      socketService.addEventListener('user_typing', handleUserTyping);
-    }
-  };
+  // Send message function - ĐƠN GIẢN CHỈ API + SOCKET NOTIFICATION
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
 
-  const cleanupSocketListeners = () => {
-    socketService.removeEventListener('receive_message', handleReceiveMessage);
-    socketService.removeEventListener('user_typing', handleUserTyping);
-  };
-
-  const handleReceiveMessage = (messageData) => {
-    if (messageData && messageData.sender === friend._id) {
-      setMessages(prev => Array.isArray(prev) ? [...prev, messageData] : [messageData]);
-    }
-  };
-
-  const handleUserTyping = (data) => {
-    if (data.userId === friend._id) {
-      setIsTyping(data.isTyping);
-      if (data.isTyping) {
-        setTimeout(() => setIsTyping(false), 3000);
-      }
-    }
-  };
-
-  const handleSendMessage = () => {
-    if (!newMessage.trim() || !currentUser || !friend) return;
-
-    const messageData = {
-      _id: Date.now().toString(),
-      sender: currentUser,
-      receiver: friend,
-      message: newMessage.trim(),
-      createdAt: new Date(),
-      readBy: []
-    };
-
-    // Thêm tin nhắn vào UI ngay lập tức
-    setMessages(prev => Array.isArray(prev) ? [...prev, messageData] : [messageData]);
-    const messageToSend = newMessage.trim();
+    const messageText = newMessage.trim();
     setNewMessage('');
 
-    // Gửi tin nhắn qua socket
     try {
+      console.log('🚀 Sending message:', messageText);
+
+      // 1. GỬI VIA API để save vào database
+      const savedMessage = await sendMessageAPI(currentUserId, friendId, messageText);
+      console.log('✅ API saved message:', savedMessage);
+
+      // 2. THÊM message vào UI ngay lập tức (cho sender)
+      setMessages(prev => {
+        // Check duplicate
+        const exists = prev.some(m => m._id === savedMessage._id);
+        if (exists) {
+          console.log('⚠️ Message already exists, not adding duplicate');
+          return prev;
+        }
+        
+        const newMessages = [...prev, savedMessage];
+        return newMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
+
+      // 3. GỬI NOTIFICATION via socket để receiver reload
       if (socketService.isConnectedToSocket()) {
         socketService.sendMessage({
-          sender: currentUser._id,
-          receiver: friend._id,
-          message: messageToSend
+          sender: currentUserId,
+          receiver: friendId,
+          message: messageText,
+          _id: savedMessage._id // Gửi kèm real ID
         });
       }
-    } catch (error) {
-      console.error('❌ Lỗi khi gửi tin nhắn qua socket:', error);
-    }
 
-    // Focus lại input
-    setTimeout(() => {
+      // Focus input
       inputRef.current?.focus();
-    }, 100);
+
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
+      // Restore message if failed
+      setNewMessage(messageText);
+    }
   };
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage();
+      sendMessage();
     }
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const formatTime = (date) => {
@@ -138,31 +182,16 @@ const FacebookStyleChatbox = ({ friend, currentUser, position = 0, onClose }) =>
   };
 
   const renderMessage = (message, index) => {
-    if (!message || !message._id || !message.sender) {
-      return null;
-    }
+    if (!message?._id || !message?.sender) return null;
 
-    const isOwn = message.sender._id === currentUser._id;
-    const showAvatar = !isOwn && (index === 0 || 
-      (messages[index - 1] && messages[index - 1].sender && messages[index - 1].sender._id !== message.sender._id));
+    const isOwn = message.sender._id === currentUserId;
     const showTime = index === messages.length - 1 || 
-                     (messages[index + 1] && messages[index + 1].sender && messages[index + 1].sender._id !== message.sender._id) ||
                      (messages[index + 1] && moment(messages[index + 1].createdAt).diff(moment(message.createdAt), 'minutes') > 5);
 
     return (
       <div key={message._id} className={`message-wrapper ${isOwn ? 'own' : 'other'}`}>
-        {showAvatar && !isOwn && (
-          <img 
-            src={message.sender.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiNmMGYyZjUiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CjxwYXRoIGQ9Ik0xMiAxMkM5Ljc5IDEyIDggMTAuMjEgOCA4UzkuNzkgNDEyIDRTMTQuMjEgNiAxNiA4UzEyIDEwLjIxIDEyIDEyWk0xMiAxNEM2IDEzIDYgMTcgNiAxOFYyMEgxOFYxOEMxOCAxNyAxOCAxMyAxMiAxNFoiIGZpbGw9IiM2NTY3NmIiLz4KPHN2Zz4KPHN2Zz4='} 
-            alt={getDisplayName(message.sender)}
-            className="message-avatar"
-            onError={(e) => {
-              e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiNmMGYyZjUiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CjxwYXRoIGQ9Ik0xMiAxMkM5Ljc5IDEyIDggMTAuMjEgOCA4UzkuNzkgNDEyIDRTMTQuMjEgNiAxNiA4UzEyIDEwLjIxIDEyIDEyWk0xMiAxNEM2IDEzIDYgMTcgNiAxOFYyMEgxOFYxOEMxOCAxNyAxOCAxMyAxMiAxNFoiIGZpbGw9IiM2NTY3NmIiLz4KPHN2Zz4KPHN2Zz4=';
-            }}
-          />
-        )}
         <div className={`message-bubble ${isOwn ? 'own' : 'other'}`}>
-          <span className="message-text">{message.message || ''}</span>
+          <span className="message-text">{message.message || message.content?.text || ''}</span>
           {showTime && (
             <div className="message-time">{formatTime(message.createdAt)}</div>
           )}
@@ -171,38 +200,26 @@ const FacebookStyleChatbox = ({ friend, currentUser, position = 0, onClose }) =>
     );
   };
 
-  const chatStyle = {
-    position: 'fixed',
-    bottom: '0',
-    right: `${80 + (position * 330)}px`,
-    zIndex: 999999,
-    width: '328px',
-    height: 'auto',
-    maxHeight: '445px',
-    backgroundColor: '#fff',
-    borderRadius: '8px 8px 0 0',
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1)'
-  };
-
-  console.log('🎨 Rendering FacebookStyleChatbox với style:', chatStyle);
-  console.log('👤 Friend name:', getDisplayName(friend));
-
   return (
     <div 
       className={`facebook-chatbox ${isMinimized ? 'minimized' : ''}`} 
-      style={chatStyle}
+      style={{
+        position: 'fixed',
+        bottom: '0',
+        right: `${80 + (position * 330)}px`,
+        zIndex: 999999,
+        width: '328px',
+        height: 'auto',
+        maxHeight: '445px',
+        backgroundColor: '#fff',
+        borderRadius: '8px 8px 0 0',
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1)',
+        pointerEvents: 'auto'
+      }}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Chat Header */}
-              <div 
-          className="chatbox-header" 
-          onClick={(e) => {
-            // Chỉ toggle minimize nếu không click vào action buttons
-            if (!e.target.closest('.action-btn')) {
-              setIsMinimized(!isMinimized);
-            }
-          }}
-        >
+      {/* Header */}
+      <div className="chatbox-header">
         <div className="header-info">
           <div className="header-avatar">
             <img 
@@ -222,71 +239,47 @@ const FacebookStyleChatbox = ({ friend, currentUser, position = 0, onClose }) =>
           </div>
         </div>
         <div className="header-actions">
-                      <FontAwesomeIcon icon={faPhone} className="action-btn" title="Bắt đầu gọi thoại" />
-          <FontAwesomeIcon icon={faVideoCamera} className="action-btn" title="Bắt đầu gọi video" />
-          <FontAwesomeIcon icon={faMinus} className="action-btn" title="Thu nhỏ đoạn chat" />
           <FontAwesomeIcon 
             icon={faTimes} 
             className="action-btn" 
-            title="Đóng đoạn chat"
             onClick={(e) => {
               e.stopPropagation();
-              onClose();
+              onClose(friendId);
             }} 
           />
         </div>
       </div>
 
-      {/* Chat Body */}
+      {/* Messages */}
       {!isMinimized && (
         <>
           <div className="chatbox-messages">
             {loading ? (
               <div className="loading-messages">Đang tải tin nhắn...</div>
             ) : (
-              <>
-                {Array.isArray(messages) && messages.map((message, index) => 
-                  renderMessage(message, index)
-                ).filter(Boolean)}
-                {isTyping && (
-                  <div className="typing-indicator">
-                    <div className="typing-dots">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                    <span>{getDisplayName(friend)} đang soạn tin nhắn...</span>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </>
+              messages.map((message, index) => renderMessage(message, index))
             )}
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Chat Input */}
+          {/* Input */}
           <div className="chatbox-input">
             <div className="input-wrapper">
-                              <input
-                  ref={inputRef}
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  onClick={(e) => e.stopPropagation()}
-                  placeholder="Aa"
-                  className="message-input"
-                />
+              <input
+                ref={inputRef}
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Aa"
+                className="message-input"
+              />
               <div className="input-actions">
-                <FontAwesomeIcon icon={faImage} className="input-action" />
-                <FontAwesomeIcon icon={faSmile} className="input-action" />
                 {newMessage.trim() ? (
                   <FontAwesomeIcon 
                     icon={faPaperPlane} 
                     className="send-btn" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSendMessage();
-                    }}
+                    onClick={sendMessage}
                   />
                 ) : (
                   <FontAwesomeIcon icon={faThumbsUp} className="like-btn" />
@@ -298,6 +291,14 @@ const FacebookStyleChatbox = ({ friend, currentUser, position = 0, onClose }) =>
       )}
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Proper comparison để tránh re-render không cần thiết
+  return (
+    prevProps.friend?._id === nextProps.friend?._id &&
+    prevProps.currentUser?._id === nextProps.currentUser?._id &&
+    prevProps.position === nextProps.position
+    // onClose không cần compare vì đã memoize trong Header
+  );
+});
 
-export default FacebookStyleChatbox; 
+export default FacebookStyleChatbox;

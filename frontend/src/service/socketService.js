@@ -6,11 +6,11 @@ class SocketService {
     this.isConnected = false;
     this.isConnecting = false;
     this.userId = null;
-    this.listeners = new Map();
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 1000;
     this.connectionTimeout = null;
+    this.eventListeners = new Map();
   }
 
   // Connect to socket server with robust error handling
@@ -30,21 +30,18 @@ class SocketService {
     this.userId = userId;
 
     try {
-      console.log(`🔗 Connecting to socket server for user: ${userId}`);
+      console.log(`🚀 Connecting to socket for user: ${userId}`);
       
       // Create socket connection with proper configuration
       this.socket = io('http://localhost:8080', {
-        withCredentials: true,
-        transports: ['websocket', 'polling'],
-        timeout: 10000,
-        reconnection: true,
-        reconnectionDelay: this.reconnectDelay,
-        reconnectionAttempts: this.maxReconnectAttempts,
+        transports: ['websocket'],
         autoConnect: true,
-        forceNew: false
+        reconnection: true,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionDelay: this.reconnectDelay,
       });
 
-      this.setupSocketEvents();
+      this.setupEventListeners();
       this.setupConnectionTimeout();
 
     } catch (error) {
@@ -55,134 +52,117 @@ class SocketService {
   }
 
   // Setup all socket event handlers
-  setupSocketEvents() {
+  setupEventListeners() {
     if (!this.socket) return;
 
-    // Connection successful
     this.socket.on('connect', () => {
-      console.log('🔗 Socket connected successfully:', this.socket.id);
+      console.log('✅ Socket connected successfully');
       this.isConnected = true;
-      this.isConnecting = false;
       this.reconnectAttempts = 0;
-      this.clearConnectionTimeout();
       
-      // Join user's personal room
-      this.joinUserRoom(this.userId);
+      if (this.userId) {
+        this.joinUserRoom(this.userId);
+      }
       
-      // Setup application event listeners
-      this.setupApplicationListeners();
-      
-      // Emit connected event for UI
-      this.triggerListener('connected', { socketId: this.socket.id });
+      this.emit('connected', { timestamp: new Date() });
     });
 
-    // Connection failed
-    this.socket.on('connect_error', (error) => {
-      console.error('❌ Socket connection error:', error);
-      this.isConnected = false;
-      this.isConnecting = false;
-      this.handleConnectionError(error);
-    });
-
-    // Disconnected
     this.socket.on('disconnect', (reason) => {
       console.log('❌ Socket disconnected:', reason);
       this.isConnected = false;
-      this.handleDisconnection(reason);
+      this.emit('disconnected', { reason, timestamp: new Date() });
     });
 
-    // Reconnection attempt
-    this.socket.on('reconnect_attempt', (attemptNumber) => {
-      console.log(`🔄 Reconnection attempt ${attemptNumber}/${this.maxReconnectAttempts}`);
-      this.reconnectAttempts = attemptNumber;
+    this.socket.on('connect_error', (error) => {
+      console.error('🔥 Socket connection error:', error);
+      this.isConnected = false;
+      this.reconnectAttempts++;
+      
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        this.emit('reconnection_failed', { attempts: this.reconnectAttempts });
+      } else {
+        this.emit('connection_error', { error, attempts: this.reconnectAttempts });
+      }
     });
 
-    // Reconnection successful
-    this.socket.on('reconnect', (attemptNumber) => {
-      console.log(`✅ Socket reconnected after ${attemptNumber} attempts`);
+    this.socket.on('reconnect', () => {
+      console.log('🔄 Socket reconnected');
       this.isConnected = true;
       this.reconnectAttempts = 0;
-      this.joinUserRoom(this.userId);
       
-      // Emit reconnected event for UI
-      this.triggerListener('connected', { socketId: this.socket.id, reconnected: true, attempts: attemptNumber });
+      if (this.userId) {
+        this.joinUserRoom(this.userId);
+      }
+      
+      this.emit('reconnected', { timestamp: new Date() });
     });
 
-    // Reconnection failed
-    this.socket.on('reconnect_failed', () => {
-      console.error('❌ Socket reconnection failed after maximum attempts');
-      this.handleReconnectionFailed();
-    });
-  }
-
-  // Setup application-specific event listeners
-  setupApplicationListeners() {
-    if (!this.socket) return;
-
-    // Remove existing listeners to prevent duplicates
-    this.socket.off('new_friend_request');
-    this.socket.off('friend_request_status');
-    this.socket.off('new_notification');
-    this.socket.off('notification_read');
-    this.socket.off('user_online');
-    this.socket.off('user_offline');
-    this.socket.off('user_typing');
-    this.socket.off('receive_message');
-
-    // Friend request notifications
-    this.socket.on('new_friend_request', (data) => {
-      console.log('🔔 New friend request:', data);
-      this.triggerListener('new_friend_request', data);
+    // Message events
+    this.socket.on('receive_message', (messageData) => {
+      console.log('📩 Received message:', messageData);
+      this.emit('receive_message', messageData);
     });
 
-    // Friend request status updates
-    this.socket.on('friend_request_status', (data) => {
-      console.log('🎉 Friend request status:', data);
-      this.triggerListener('friend_request_status', data);
+    this.socket.on('message_error', (errorData) => {
+      console.error('❌ Message error:', errorData);
+      this.emit('message_error', errorData);
     });
 
-    // General notifications
-    this.socket.on('new_notification', (data) => {
-      console.log('🔔 New notification:', data);
-      this.triggerListener('new_notification', data);
+    this.socket.on('conversation_updated', (data) => {
+      console.log('💬 Conversation updated:', data);
+      this.emit('conversation_updated', data);
     });
 
-    // Notification read status
-    this.socket.on('notification_read', (data) => {
-      console.log('📖 Notification read:', data);
-      this.triggerListener('notification_read', data);
+    this.socket.on('messages_read', (data) => {
+      console.log('📖 Messages marked as read:', data);
+      this.emit('messages_read', data);
     });
 
-    // User online/offline status
+    // Typing events
+    this.socket.on('user_typing', (data) => {
+      console.log('⌨️ User typing:', data);
+      this.emit('user_typing', data);
+    });
+
+    // Online status events
     this.socket.on('user_online', (data) => {
       console.log('🟢 User online:', data);
-      this.triggerListener('user_online', data);
+      this.emit('user_online', data);
     });
 
     this.socket.on('user_offline', (data) => {
       console.log('🔴 User offline:', data);
-      this.triggerListener('user_offline', data);
+      this.emit('user_offline', data);
     });
 
-    // Typing indicators
-    this.socket.on('user_typing', (data) => {
-      this.triggerListener('user_typing', data);
+    // Friend request events
+    this.socket.on('new_friend_request', (data) => {
+      console.log('👥 New friend request:', data);
+      this.emit('new_friend_request', data);
     });
 
-    // Messages
-    this.socket.on('receive_message', (data) => {
-      console.log('📩 New message:', data);
-      this.triggerListener('receive_message', data);
+    this.socket.on('friend_request_status', (data) => {
+      console.log('✅ Friend request status:', data);
+      this.emit('friend_request_status', data);
     });
 
-    console.log('✅ Application socket listeners set up');
+    // Notification events
+    this.socket.on('new_notification', (data) => {
+      console.log('🔔 New notification:', data);
+      this.emit('new_notification', data);
+    });
+
+    this.socket.on('notification_read', (data) => {
+      console.log('📖 Notification read:', data);
+      this.emit('notification_read', data);
+    });
   }
 
   // Join user's personal room
   joinUserRoom(userId) {
-    if (this.socket && this.isConnected && userId) {
+    if (this.isConnectedToSocket() && userId) {
+      console.log(`👤 Joining room for user: ${userId}`);
       this.socket.emit('join', userId);
-      console.log(`👤 Joined room for user: ${userId}`);
     }
   }
 
@@ -191,7 +171,7 @@ class SocketService {
     console.error('🔥 Socket connection error details:', error);
     
     // Notify listeners about connection error
-    this.triggerListener('connection_error', { error, attempts: this.reconnectAttempts });
+    this.emit('connection_error', { error, attempts: this.reconnectAttempts });
     
     // Clear connection timeout
     this.clearConnectionTimeout();
@@ -202,7 +182,7 @@ class SocketService {
     console.log('🔌 Handling disconnection, reason:', reason);
     
     // Notify listeners about disconnection
-    this.triggerListener('disconnected', { reason });
+    this.emit('disconnected', { reason });
     
     // Don't auto-reconnect for certain reasons
     if (reason === 'io server disconnect' || reason === 'io client disconnect') {
@@ -218,7 +198,7 @@ class SocketService {
     this.isConnecting = false;
     
     // Notify listeners
-    this.triggerListener('reconnection_failed', { 
+    this.emit('reconnection_failed', { 
       attempts: this.maxReconnectAttempts 
     });
   }
@@ -244,7 +224,7 @@ class SocketService {
 
   // Disconnect socket cleanly
   disconnect() {
-    console.log('🔌 Disconnecting socket...');
+    console.log('🔌 Disconnecting socket');
     
     this.clearConnectionTimeout();
     
@@ -258,14 +238,14 @@ class SocketService {
     this.isConnecting = false;
     this.userId = null;
     this.reconnectAttempts = 0;
-    this.listeners.clear();
+    this.eventListeners.clear();
     
     console.log('✅ Socket disconnected cleanly');
   }
 
   // Check connection status
   isConnectedToSocket() {
-    return this.socket && this.isConnected && this.socket.connected;
+    return this.socket && this.isConnected;
   }
 
   // Add event listener with safety checks
@@ -275,26 +255,26 @@ class SocketService {
       return;
     }
 
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Set());
     }
     
-    this.listeners.get(event).add(callback);
+    this.eventListeners.get(event).add(callback);
     console.log(`📝 Added listener for event: ${event}`);
   }
 
   // Remove event listener
   removeEventListener(event, callback) {
-    if (this.listeners.has(event)) {
-      this.listeners.get(event).delete(callback);
+    if (this.eventListeners.has(event)) {
+      this.eventListeners.get(event).delete(callback);
       console.log(`🗑️ Removed listener for event: ${event}`);
     }
   }
 
   // Trigger all listeners for an event
-  triggerListener(event, data) {
-    if (this.listeners.has(event)) {
-      this.listeners.get(event).forEach(callback => {
+  emit(event, data) {
+    if (this.eventListeners.has(event)) {
+      this.eventListeners.get(event).forEach(callback => {
         try {
           callback(data);
         } catch (error) {
@@ -308,10 +288,11 @@ class SocketService {
   sendMessage(messageData) {
     if (!this.isConnectedToSocket()) {
       console.warn('⚠️ Cannot send message: Socket not connected');
-      return false;
+      throw new Error('Socket not connected');
     }
 
     try {
+      console.log('📤 Sending message via socket:', messageData);
       this.socket.emit('send_message', messageData);
       return true;
     } catch (error) {
@@ -321,21 +302,15 @@ class SocketService {
   }
 
   // Send typing indicators
-  startTyping(receiverId) {
+  startTyping(senderId, receiverId, conversationId) {
     if (this.isConnectedToSocket()) {
-      this.socket.emit('typing_start', {
-        senderId: this.userId,
-        receiverId
-      });
+      this.socket.emit('typing_start', { senderId, receiverId, conversationId });
     }
   }
 
-  stopTyping(receiverId) {
+  stopTyping(senderId, receiverId, conversationId) {
     if (this.isConnectedToSocket()) {
-      this.socket.emit('typing_stop', {
-        senderId: this.userId,
-        receiverId
-      });
+      this.socket.emit('typing_stop', { senderId, receiverId, conversationId });
     }
   }
 
@@ -375,14 +350,60 @@ class SocketService {
       reconnectAttempts: this.reconnectAttempts,
       maxReconnectAttempts: this.maxReconnectAttempts,
       transport: this.socket?.io?.engine?.transport?.name,
-      listenerCount: this.listeners.size
+      listenerCount: this.eventListeners.size
     };
   }
 
   // Debug method
   debug() {
     console.log('🔍 Socket Debug Info:', this.getConnectionStatus());
-    console.log('🎯 Active listeners:', Array.from(this.listeners.keys()));
+    console.log('🎯 Active listeners:', Array.from(this.eventListeners.keys()));
+  }
+
+
+
+  // Mark messages as read
+  markMessagesAsRead(conversationId, userId) {
+    if (this.isConnectedToSocket()) {
+      this.socket.emit('mark_messages_read', { conversationId, userId });
+    }
+  }
+
+  // Friend request events
+  sendFriendRequest(data) {
+    if (this.isConnectedToSocket()) {
+      this.socket.emit('send_friend_request', data);
+    }
+  }
+
+  acceptFriendRequest(data) {
+    if (this.isConnectedToSocket()) {
+      this.socket.emit('friend_request_accepted', data);
+    }
+  }
+
+  declineFriendRequest(data) {
+    if (this.isConnectedToSocket()) {
+      this.socket.emit('friend_request_declined', data);
+    }
+  }
+
+  // Notification events
+  sendNotification(data) {
+    if (this.isConnectedToSocket()) {
+      this.socket.emit('send_notification', data);
+    }
+  }
+
+  markNotificationAsRead(userId, notificationId) {
+    if (this.isConnectedToSocket()) {
+      this.socket.emit('mark_notification_read', { userId, notificationId });
+    }
+  }
+
+  // Utility methods
+  getSocketId() {
+    return this.socket?.id || null;
   }
 }
 

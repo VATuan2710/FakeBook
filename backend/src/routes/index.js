@@ -9,7 +9,7 @@ const routes = Router();
 
 routes.use("/auth", authRoutes);
 routes.use("/posts", postRoutes);
-routes.use("/messages", messageRoute);
+routes.use("/message", messageRoute);
 routes.use("/user", userRoute);
 routes.use("/friend", friendAuth);
 export default routes;

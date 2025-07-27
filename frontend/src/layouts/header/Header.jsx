@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import "./Header.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -12,12 +12,12 @@ import {
   faSun,
 } from "@fortawesome/free-solid-svg-icons";
 import { getUserInfo } from "../../service/authService";
-import ChatBox from "../../components/Chatbox";
 import { NavLink } from "react-router-dom";
 import UserList from "../../components/UserList";
 import socketService from "../../service/socketService";
 import NotificationCenter from "../../components/NotificationCenter";
 import ChatInterface from "../../components/ChatInterface";
+import FacebookStyleChatbox from "../../components/FacebookStyleChatbox";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -28,6 +28,7 @@ const Header = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [socketStatus, setSocketStatus] = useState('disconnected'); // disconnected, connecting, connected, error
+  const [openChats, setOpenChats] = useState([]); // Track open chats globally
 
   useEffect(() => {
     // Load dark mode preference from localStorage
@@ -167,18 +168,25 @@ const Header = () => {
         setIsMenuOpen(false);
       }
       
-      // Close chat if clicking outside - but not when clicking inside chat content
-      if (isChatOpen && 
-          !event.target.closest('.message-icon') && 
-          !event.target.closest('.chat-interface') && 
-          !event.target.closest('.facebook-chatbox') &&
-          !event.target.closest('.friend-item') &&
-          !event.target.closest('.chat-search') &&
-          !event.target.closest('.friends-list')) {
-        setIsChatOpen(false);
+      // Close chat if clicking outside - improved logic to avoid hover conflicts
+      if (isChatOpen) {
+        const isClickingInsideChat = event.target.closest('.message-icon') ||
+                                   event.target.closest('.chat-interface') || 
+                                   event.target.closest('.facebook-chatbox') ||
+                                   event.target.closest('.friend-item') ||
+                                   event.target.closest('.chat-search') ||
+                                   event.target.closest('.friends-list') ||
+                                   event.target.closest('.chatbox-header') ||
+                                   event.target.closest('.chatbox-messages') ||
+                                   event.target.closest('.chatbox-input');
+        
+        if (!isClickingInsideChat) {
+          setIsChatOpen(false);
+        }
       }
     };
 
+    // Use mousedown instead of click for better responsiveness
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
@@ -224,7 +232,10 @@ const Header = () => {
     window.location.href = "/login";
   };
 
-
+  // Memoize onClose callback để tránh re-creation và re-render của FacebookStyleChatbox
+  const handleCloseChat = useCallback((friendId) => {
+    setOpenChats(prev => prev.filter(chat => chat._id !== friendId));
+  }, []);
 
   return (
     <div className="header">
@@ -275,6 +286,8 @@ const Header = () => {
             currentUser={user}
             isOpen={isChatOpen}
             onClose={() => setIsChatOpen(false)}
+            openChats={openChats}
+            setOpenChats={setOpenChats}
           />
         </div>
         
@@ -334,6 +347,27 @@ const Header = () => {
           onClose={() => setIsNotificationOpen(false)}
         />
       )}
+
+      {/* Render Chat Boxes outside of header to avoid container conflicts */}
+      {openChats.map((friend, index) => {
+        // console.log('🔍 Rendering chatbox for:', { friend, user, index });
+        
+        // Chỉ render khi có đủ data
+        if (!friend?._id || !user?._id) {
+          // console.log('⚠️ Missing data, skipping render:', { friendId: friend?._id, userId: user?._id });
+          return null;
+        }
+        
+        return (
+          <FacebookStyleChatbox
+            key={`chat-${friend._id}`}
+            friend={friend}
+            currentUser={user}
+            position={index}
+            onClose={handleCloseChat}
+          />
+        );
+      })}
     </div>
   );
 };

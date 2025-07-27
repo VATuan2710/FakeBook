@@ -7,87 +7,103 @@ import Widgets from "../layouts/widgets/Widgets";
 import Stories from "../components/Stories";
 import PeopleYouMayKnow from "../components/PeopleYouMayKnow";
 import PostFormPage from "./PostFormPage";
-import PostListPage from "./PostListPage";
 import { getPosts } from "../service/postService";
 
 const HomePage = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
-  useEffect(() => {
-    const fetchPosts = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        console.log("🔄 Đang tải danh sách bài viết...");
-        const postsData = await getPosts();
-        
-        console.log("✅ Tải bài viết thành công:", postsData);
+  const fetchPosts = async (pageNum = 1, reset = false) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log(`🔄 Đang tải danh sách bài viết trang ${pageNum}...`);
+      const postsData = await getPosts(pageNum, 10);
+      
+      console.log("✅ Tải bài viết thành công:", postsData);
+      
+      if (reset) {
         setPosts(postsData.posts || []);
-      } catch (error) {
-        console.error("❌ Lỗi khi lấy danh sách bài viết:", error);
-        
-        // Xử lý các loại lỗi khác nhau
-        if (error.response?.status === 401) {
-          setError("Phiên đăng nhập đã hết hạn. Đang chuyển hướng...");
-        } else if (error.response?.status === 403) {
-          setError("Bạn không có quyền xem các bài viết này.");
-        } else if (error.response?.status >= 500) {
-          setError("Lỗi server. Vui lòng thử lại sau.");
-        } else if (!navigator.onLine) {
-          setError("Không có kết nối internet. Vui lòng kiểm tra kết nối của bạn.");
-        } else {
-          setError("Không thể tải bài viết. Vui lòng thử lại.");
-        }
-        
+      } else {
+        setPosts(prev => [...prev, ...(postsData.posts || [])]);
+      }
+      
+      // Check if there are more posts
+      if (postsData.posts && postsData.posts.length < 10) {
+        setHasMore(false);
+      }
+      
+    } catch (error) {
+      console.error("❌ Lỗi khi lấy danh sách bài viết:", error);
+      
+      // Xử lý các loại lỗi khác nhau
+      if (error.response?.status === 401) {
+        setError("Phiên đăng nhập đã hết hạn. Đang chuyển hướng...");
+      } else if (error.response?.status === 403) {
+        setError("Bạn không có quyền xem các bài viết này.");
+      } else if (error.response?.status >= 500) {
+        setError("Lỗi server. Vui lòng thử lại sau.");
+      } else if (!navigator.onLine) {
+        setError("Không có kết nối internet. Vui lòng kiểm tra kết nối của bạn.");
+      } else {
+        setError("Không thể tải bài viết. Vui lòng thử lại.");
+      }
+      
+      if (reset) {
         setPosts([]);
-      } finally {
-        setLoading(false);
       }
-    };
-
-    // Kiểm tra xem user có đăng nhập không
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.warn("⚠️ Không tìm thấy token, chuyển hướng đến trang login");
-      window.location.href = "/login";
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    fetchPosts();
-  }, []);
-
-  // Hàm callback để cập nhật danh sách bài viết
-  const handlePostCreated = (newPost) => {
-    setPosts((prevPosts) => {
-      if (!Array.isArray(prevPosts)) {
-        console.error("prevPosts không phải là mảng:", prevPosts);
-        return [newPost]; 
-      }
-      return [newPost, ...prevPosts]; // Thêm bài viết mới vào đầu danh sách
-    });
   };
 
-  // Hàm retry để thử lại việc tải bài viết
-  const handleRetry = () => {
-    const fetchPosts = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const postsData = await getPosts();
-        setPosts(postsData.posts || []);
-      } catch (error) {
-        console.error("❌ Lỗi khi retry tải bài viết:", error);
-        setError("Vẫn không thể tải bài viết. Vui lòng thử lại sau.");
-      } finally {
-        setLoading(false);
+  useEffect(() => {
+    fetchPosts(1, true);
+  }, []);
+
+  // Infinite scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (
+        window.innerHeight + document.documentElement.scrollTop >=
+        document.documentElement.offsetHeight - 1000 &&
+        hasMore &&
+        !loading
+      ) {
+        const nextPage = page + 1;
+        setPage(nextPage);
+        fetchPosts(nextPage, false);
       }
     };
 
-    fetchPosts();
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [page, hasMore, loading]);
+
+  // Handle when a new post is created
+  const handlePostCreated = (newPost) => {
+    console.log("✅ Bài viết mới được tạo:", newPost);
+    setPosts(prev => [newPost.post, ...prev]);
+  };
+
+  // Handle when a post is updated (reactions, comments, etc.)
+  const handlePostUpdate = (postId, updates) => {
+    setPosts(prev => prev.map(post => 
+      post._id === postId 
+        ? { ...post, ...updates }
+        : post
+    ));
+  };
+
+  // Retry loading posts
+  const handleRetry = () => {
+    setPage(1);
+    setHasMore(true);
+    fetchPosts(1, true);
   };
 
   return (
@@ -108,8 +124,8 @@ const HomePage = () => {
             />
           </div>
           
-          {/* Hiển thị loading state */}
-          {loading && (
+          {/* Hiển thị loading state cho lần đầu load */}
+          {loading && posts.length === 0 && (
             <div style={{ 
               textAlign: 'center', 
               padding: '20px',
@@ -122,7 +138,7 @@ const HomePage = () => {
           )}
           
           {/* Hiển thị error state */}
-          {error && !loading && (
+          {error && posts.length === 0 && (
             <div style={{ 
               textAlign: 'center', 
               padding: '20px',
@@ -151,8 +167,52 @@ const HomePage = () => {
           )}
           
           {/* Hiển thị danh sách bài viết */}
-          {!loading && !error && (
-            <PostListPage posts={posts} />
+          {posts.length > 0 && (
+            <Posts 
+              posts={posts} 
+              onPostUpdate={handlePostUpdate}
+            />
+          )}
+          
+          {/* Loading indicator for infinite scroll */}
+          {loading && posts.length > 0 && (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '20px',
+              color: '#65676b'
+            }}>
+              <div>🔄 Đang tải thêm bài viết...</div>
+            </div>
+          )}
+          
+          {/* No more posts indicator */}
+          {!hasMore && posts.length > 0 && (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '20px',
+              color: '#65676b',
+              backgroundColor: '#f0f2f5',
+              borderRadius: '8px',
+              margin: '10px 0'
+            }}>
+              <div>✅ Đã tải hết tất cả bài viết</div>
+            </div>
+          )}
+          
+          {/* Empty state */}
+          {!loading && posts.length === 0 && !error && (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '40px',
+              backgroundColor: '#fff',
+              borderRadius: '8px',
+              margin: '10px 0',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📝</div>
+              <h3 style={{ color: '#1c1e21', marginBottom: '8px' }}>Chưa có bài viết nào</h3>
+              <p style={{ color: '#65676b' }}>Hãy tạo bài viết đầu tiên của bạn!</p>
+            </div>
           )}
         </div>
         <Widgets />

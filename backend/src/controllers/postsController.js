@@ -309,3 +309,266 @@ export const updatePost = async (req, res) => {
     });
   }
 };
+
+// **API: Tạo comment cho bài viết**
+export const createComment = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { content, parentComment = null } = req.body;
+    const { userId } = req.user;
+
+    if (!content?.text?.trim()) {
+      return res.status(400).json({ message: "Nội dung comment không được để trống" });
+    }
+
+    const post = await Posts.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Không tìm thấy bài viết" });
+    }
+
+    // Create comment
+    const commentData = {
+      postId: postId,
+      author: userId,
+      content: {
+        text: content.text || content
+      },
+      parentComment: parentComment,
+      level: 0
+    };
+
+    // If it's a reply, set the level
+    if (parentComment) {
+      const parent = await Comment.findById(parentComment);
+      if (parent) {
+        commentData.level = parent.level + 1;
+        if (commentData.level > 3) {
+          return res.status(400).json({ message: "Không thể reply quá 3 cấp" });
+        }
+      }
+    }
+
+    const newComment = new Comment(commentData);
+    await newComment.save();
+
+    // Add comment to post
+    post.comments.push(newComment._id);
+    post.commentsCount += 1;
+    await post.save();
+
+    // Populate comment data
+    await newComment.populate('author', 'displayName username avatarUrl');
+
+    res.status(201).json({
+      message: "Tạo comment thành công",
+      comment: newComment
+    });
+  } catch (error) {
+    console.error("Lỗi khi tạo comment:", error);
+    res.status(500).json({ 
+      message: "Lỗi server khi tạo comment",
+      error: error.message 
+    });
+  }
+};
+
+// **API: Lấy comments của bài viết**
+export const getPostComments = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { page = 1, limit = 10, sort = "desc" } = req.query;
+
+    const post = await Posts.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Không tìm thấy bài viết" });
+    }
+
+    const sortOrder = sort === "asc" ? 1 : -1;
+    
+    // Get top-level comments (not replies)
+    const comments = await Comment.find({
+      postId: postId,
+      parentComment: null,
+      isDeleted: false
+    })
+    .populate('author', 'displayName username avatarUrl')
+    .populate({
+      path: 'replies',
+      populate: {
+        path: 'author',
+        select: 'displayName username avatarUrl'
+      },
+      match: { isDeleted: false },
+      options: { limit: 3, sort: { createdAt: 1 } } // Show first 3 replies
+    })
+    .sort({ isPinned: -1, createdAt: sortOrder })
+    .skip((page - 1) * limit)
+    .limit(Number(limit));
+
+    const totalComments = await Comment.countDocuments({
+      postId: postId,
+      parentComment: null,
+      isDeleted: false
+    });
+
+    res.status(200).json({
+      comments,
+      totalComments,
+      currentPage: Number(page),
+      totalPages: Math.ceil(totalComments / limit)
+    });
+  } catch (error) {
+    console.error("Lỗi khi lấy comments:", error);
+    res.status(500).json({ 
+      message: "Lỗi server khi lấy comments",
+      error: error.message 
+    });
+  }
+};
+
+// **API: React cho comment**
+export const toggleCommentReaction = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { reactionType = "like" } = req.body;
+    const { userId } = req.user;
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Không tìm thấy comment" });
+    }
+
+    // Check if user already reacted
+    const existingReaction = comment.reactions.find(r => r.user.toString() === userId.toString());
+
+    if (existingReaction) {
+      if (existingReaction.type === reactionType) {
+        // Remove reaction
+        comment.reactions = comment.reactions.filter(r => r.user.toString() !== userId.toString());
+      } else {
+        // Update reaction
+        existingReaction.type = reactionType;
+        existingReaction.createdAt = new Date();
+      }
+    } else {
+      // Add new reaction
+      comment.reactions.push({
+        user: userId,
+        type: reactionType,
+        createdAt: new Date()
+      });
+    }
+
+    comment.updateReactionCounts();
+    await comment.save();
+    await comment.populate('reactions.user', 'displayName avatarUrl');
+
+    res.status(200).json({
+      message: "Cập nhật reaction comment thành công",
+      reactions: comment.reactions,
+      reactionCounts: comment.reactionCounts
+    });
+  } catch (error) {
+    console.error("Lỗi khi toggle comment reaction:", error);
+    res.status(500).json({ 
+      message: "Lỗi server khi cập nhật comment reaction",
+      error: error.message 
+    });
+  }
+};
+
+// **API: Chia sẻ bài viết**
+export const sharePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { shareText = "" } = req.body;
+    const { userId } = req.user;
+
+    const originalPost = await Posts.findById(postId);
+    if (!originalPost) {
+      return res.status(404).json({ message: "Không tìm thấy bài viết" });
+    }
+
+    // Create shared post
+    const sharedPostData = {
+      author: userId,
+      content: shareText,
+      text: {
+        content: shareText
+      },
+      type: "shared_post",
+      originalPost: postId,
+      shareText: shareText,
+      privacy: "friends", // Default privacy for shared posts
+      reactions: [],
+      comments: []
+    };
+
+    const sharedPost = new Posts(sharedPostData);
+    await sharedPost.save();
+
+    // Increment shares count on original post
+    originalPost.sharesCount += 1;
+    await originalPost.save();
+
+    // Populate shared post
+    await sharedPost.populate([
+      { path: 'author', select: 'displayName username avatarUrl' },
+      { 
+        path: 'originalPost', 
+        populate: { 
+          path: 'author', 
+          select: 'displayName username avatarUrl' 
+        }
+      }
+    ]);
+
+    res.status(201).json({
+      message: "Chia sẻ bài viết thành công",
+      sharedPost: sharedPost
+    });
+  } catch (error) {
+    console.error("Lỗi khi chia sẻ bài viết:", error);
+    res.status(500).json({ 
+      message: "Lỗi server khi chia sẻ bài viết",
+      error: error.message 
+    });
+  }
+};
+
+// **API: Xóa comment**
+export const deleteComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { userId } = req.user;
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Không tìm thấy comment" });
+    }
+
+    // Check if user is the author of comment or post
+    const post = await Posts.findById(comment.postId);
+    const isCommentAuthor = comment.author.toString() === userId;
+    const isPostAuthor = post.author?.toString() === userId || post.userId?.toString() === userId;
+
+    if (!isCommentAuthor && !isPostAuthor) {
+      return res.status(403).json({ message: "Bạn không có quyền xóa comment này" });
+    }
+
+    // Soft delete
+    await comment.softDelete(userId);
+
+    // Update post comment count
+    post.commentsCount = Math.max(0, post.commentsCount - 1);
+    await post.save();
+
+    res.status(200).json({ message: "Xóa comment thành công" });
+  } catch (error) {
+    console.error("Lỗi khi xóa comment:", error);
+    res.status(500).json({ 
+      message: "Lỗi server khi xóa comment",
+      error: error.message 
+    });
+  }
+};

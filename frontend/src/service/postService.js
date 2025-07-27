@@ -106,11 +106,11 @@ export const angryPost = async (postId) => {
   return toggleReaction(postId, "angry");
 };
 
-// Bình luận bài viết
+// Bình luận bài viết - CẬP NHẬT API MỚI
 export const commentOnPost = async (postId, comment) => {
   try {
     const response = await instance.post(`/posts/${postId}/comment`, {
-      content: comment,
+      content: { text: comment }
     });
     return response.data;
   } catch (error) {
@@ -119,7 +119,7 @@ export const commentOnPost = async (postId, comment) => {
   }
 };
 
-// Lấy comments của bài viết
+// Lấy comments của bài viết - CẬP NHẬT API MỚI
 export const getPostComments = async (postId, page = 1, limit = 10) => {
   try {
     const { data } = await instance.get(
@@ -132,7 +132,31 @@ export const getPostComments = async (postId, page = 1, limit = 10) => {
   }
 };
 
-// Chia sẻ bài viết
+// React cho comment - API MỚI
+export const toggleCommentReaction = async (commentId, reactionType = "like") => {
+  try {
+    const { data } = await instance.post(`/posts/comments/${commentId}/reaction`, {
+      reactionType
+    });
+    return data;
+  } catch (error) {
+    console.error("Lỗi khi react comment:", error);
+    throw error;
+  }
+};
+
+// Xóa comment - API MỚI
+export const deleteComment = async (commentId) => {
+  try {
+    const { data } = await instance.delete(`/posts/comments/${commentId}`);
+    return data;
+  } catch (error) {
+    console.error("Lỗi khi xóa comment:", error);
+    throw error;
+  }
+};
+
+// Chia sẻ bài viết - CẬP NHẬT API MỚI
 export const sharePost = async (postId, shareText = "") => {
   try {
     const { data } = await instance.post(`/posts/${postId}/share`, {

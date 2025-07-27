@@ -14,19 +14,30 @@ dotenv.config();
 connectDB();
 
 const app = express();
-const server = http.createServer(app); // tạo serverserver HTTP
+const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:51733", // Update to match frontend port
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://localhost:3000",
+    ],
     credentials: true,
+    methods: ["GET", "POST"],
   },
 });
 
 app.use(
   cors({
-    origin: "http://localhost:5173", // Update to match frontend port
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://localhost:3000",
+    ],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(bodyParser.json());
@@ -43,6 +54,7 @@ socketController(io);
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔗 Socket.IO ready for real-time connections`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Socket.IO ready for real-time connections`);
+  console.log(`API endpoints available at http://localhost:${PORT}/api`);
 });

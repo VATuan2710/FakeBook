@@ -10,14 +10,12 @@ import {
   faPhone
 } from '@fortawesome/free-solid-svg-icons';
 import { getFriends, getDisplayName, getOnlineStatus } from '../service/friendService';
-import FacebookStyleChatbox from './FacebookStyleChatbox';
 import './ChatInterface.css';
 
-const ChatInterface = ({ currentUser, isOpen, onClose }) => {
+const ChatInterface = ({ currentUser, isOpen, onClose, openChats, setOpenChats }) => {
   const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [openChats, setOpenChats] = useState([]);
   const [filteredFriends, setFilteredFriends] = useState([]);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -85,6 +83,7 @@ const ChatInterface = ({ currentUser, isOpen, onClose }) => {
     // Ngăn event bubbling để không trigger close chat
     if (event) {
       event.stopPropagation();
+      event.preventDefault();
     }
     
     console.log('🔥 handleStartChat được gọi với friend:', friend);
@@ -105,9 +104,12 @@ const ChatInterface = ({ currentUser, isOpen, onClose }) => {
       } else {
         console.log('⚠️ Chat đã tồn tại, không thêm mới');
       }
-      // Đóng chat interface sau khi mở chat với bạn bè
-      console.log('🔒 Đóng chat interface');
-      onClose();
+      
+      // Delay nhỏ trước khi đóng chat interface để tránh race condition
+      setTimeout(() => {
+        console.log('🔒 Đóng chat interface');
+        onClose();
+      }, 100);
     } else {
       console.error('❌ Friend hoặc friend._id không hợp lệ:', friend);
     }
@@ -200,24 +202,7 @@ const ChatInterface = ({ currentUser, isOpen, onClose }) => {
         </div>
       </div>
 
-      {/* Chat Boxes */}
-      {(() => {
-        console.log('🎯 Đang render chatboxes với openChats:', openChats);
-        console.log('📊 Số lượng chatboxes cần render:', openChats.length);
-        return null;
-      })()}
-      {openChats.map((friend, index) => {
-        console.log(`📦 Rendering chatbox ${index} cho friend:`, friend);
-        return (
-          <FacebookStyleChatbox
-            key={friend._id}
-            friend={friend}
-            currentUser={currentUser}
-            position={index}
-            onClose={() => handleCloseChat(friend._id)}
-          />
-        );
-      })}
+      {/* Chat Boxes - Now rendered at Header level */}
     </>
   );
 };
